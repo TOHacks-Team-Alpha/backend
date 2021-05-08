@@ -85,12 +85,19 @@ func main() {
 		})
 	})
 
-	r.GET("/profile", authMiddleware(), getProfile)
-	r.PUT("/profile", authMiddleware(), updateProfile)
-	r.GET("/data", authMiddleware(), getData)
-	r.POST("/data", authMiddleware(), postData)
-
 	// r.POST("/endpoint", authMiddleware(), endpointDandler)
+
+	r.GET("/user", authMiddleware(), getUser) //[ ] DONE? [ ] TESTED IN POSTMAN?
+	r.PUT("/user", authMiddleware(), putUser) //[ ] DONE? [ ] TESTED IN POSTMAN?
+
+	r.GET("/drive", authMiddleware(), getDrives)        //[ ] DONE? [ ] TESTED IN POSTMAN?
+	r.GET("/drive/:id", authMiddleware(), getDriveByID) //[ ] DONE? [ ] TESTED IN POSTMAN?
+	r.POST("/drive", authMiddleware(), postDrive)       //[ ] DONE? [ ] TESTED IN POSTMAN?
+
+	r.GET("/req", authMiddleware(), getDriveRequests)  //[ ] DONE? [ ] TESTED IN POSTMAN?
+	r.POST("/req", authMiddleware(), postDriveRequest) //[ ] DONE? [ ] TESTED IN POSTMAN?
+	r.PUT("/req", authMiddleware(), putDriveRequest)   //[ ] DONE? [ ] TESTED IN POSTMAN?
+	r.GET("/rides", authMiddleware(), getRideRequests) //[ ] DONE? [ ] TESTED IN POSTMAN?
 
 	r.Run(":8081") // listen and serve on 0.0.0.0:8081 (for windows "localhost:8081")
 }
