@@ -12,7 +12,7 @@ type User struct {
 }
 
 type Drive struct {
-	DriveID        int       `json:"drive_id"`
+	DriveID        string    `json:"drive_id"`
 	DriverID       string    `json:"driver_id"`
 	Time           time.Time `json:"time"`
 	SpaceAvailable int       `json:"space_available"`
@@ -24,7 +24,7 @@ type Drive struct {
 	DestLng        float64   `json:"dest_lng"`
 }
 type DriveRequest struct {
-	DriveID int    `json:"drive_id"`
+	DriveID string `json:"drive_id"`
 	RiderID string `json:"rider_id"`
 	Status  string `json:"status"`
 }

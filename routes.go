@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"log"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -53,17 +52,17 @@ func getDriveByID(c *gin.Context) {
 	// defer repo.conn.Close(c.Request.Context())
 
 	// user := &User{ID: c.GetString("uid")}
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		c.JSON(500, err)
-		return
-	}
+	// id, err := strconv.Atoi(c.Param("id"))
+	// if err != nil {
+	// 	c.JSON(500, err)
+	// 	return
+	// }
 
-	log.Printf("[get drive by id] | %v", id)
+	log.Printf("[get drive by id] | %v", c.Param("id"))
 
 	drive := &Drive{}
 
-	err = repo.conn.QueryRow(context.Background(), selectDriveByID, id).Scan(&drive.DriveID, &drive.DriverID, &drive.Time, &drive.SpaceAvailable, &drive.StartAddress, &drive.DestAddress, &drive.StartLat, &drive.StartLng, &drive.DestLat, &drive.DestLng)
+	err := repo.conn.QueryRow(context.Background(), selectDriveByID, c.Param("id")).Scan(&drive.DriveID, &drive.DriverID, &drive.Time, &drive.SpaceAvailable, &drive.StartAddress, &drive.DestAddress, &drive.StartLat, &drive.StartLng, &drive.DestLat, &drive.DestLng)
 	if err != nil {
 		log.Printf("[get drive by id] | %v", err)
 		c.JSON(500, err)
@@ -78,7 +77,7 @@ func getDrives(c *gin.Context) {
 	defer repo.conn.Close(context.Background())
 
 	startLat, startLng, startRadius, destLat, destLng, destRadius := c.Query("start_lat"), c.Query("start_lng"), c.Query("start_radius"), c.Query("dest_lat"), c.Query("dest_lng"), c.Query("dest_radius")
-	rows, err := repo.conn.Query(context.Background(), selectDrives, startLat, startLng, startRadius, destLat, destLng, destRadius, 20)
+	rows, err := repo.conn.Query(context.Background(), selectDrives, startLat, startLng, startRadius, destLat, destLng, destRadius, 20, c.GetString("uid"))
 	if err != nil {
 		log.Printf("[GET DRIVES] %v", err)
 		c.JSON(500, err)
@@ -255,7 +254,7 @@ func postDriveRequest(c *gin.Context) {
 
 	driveReq.RiderID = c.GetString("uid")
 
-	_, err = repo.conn.Exec(context.Background(), createDriveRequest, &driveReq.DriveID, &driveReq.RiderID, "sent")
+	err = repo.conn.QueryRow(context.Background(), createDriveRequest, &driveReq.DriveID, &driveReq.RiderID, "sent").Scan(&driveReq.Status)
 
 	if err != nil {
 		log.Printf("[POST DRIVE REQ 2] %v", err)
@@ -327,7 +326,7 @@ func putDriveRequest(c *gin.Context) {
 				return
 			}
 			// add to drives driven
-			_, err = repo.conn.Exec(context.Background(), updateUserTripsDriven, 1, drive.DriveID, 1)
+			_, err = repo.conn.Exec(context.Background(), updateUserTripsDriven, 1, drive.DriverID)
 			if err != nil {
 				log.Printf("[POST DRIVE REQ 2] %v", err)
 				c.JSON(500, err)
@@ -379,7 +378,7 @@ const (
 	updateUserTripsDriven = "UPDATE users SET num_trips_driven  = num_trips_driven  + $1 WHERE id = $2;"
 	updateUserTripsRidden = "UPDATE users SET num_trips_ridden  = num_trips_driven  + $1 WHERE id = $2;"
 	createDrive           = "INSERT INTO drives (driver_id, time, space_available, start_address, dest_address, start_lat, start_lng, dest_lat, dest_lng) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);"
-	createDriveRequest    = "INSERT INTO drive_reqs VALUES ($1, $2, $3);"
+	createDriveRequest    = "INSERT INTO drive_reqs VALUES ($1, $2, $3) RETURNING status;"
 	updateUserCoins       = "UPDATE users AS u SET coins = u.coins + u2.coins FROM ( VALUES ($1, $2), ($3, $4)) AS u2(id, coins) WHERE u2.id=u.id;"
 	getDriveReqs          = "SELECT * FROM drive_reqs where drive_id = $1;"
 	// getUserDriveReqs      = "SELECT * FROM drive_reqs where rider_id = $1;"
@@ -410,7 +409,7 @@ const (
 		"sin(radians($4)) * " +
 		"sin(radians(dest_lat))) " +
 		") AS dest_distance  " +
-		"FROM drives ), " +
+		"FROM (SELECT * FROM drives where driver_id <> $8 )), " +
 		"dists AS (SELECT * FROM cte " +
 		"WHERE cte.start_distance < $3 AND cte.dest_distance < $6 " +
 		"ORDER BY cte.start_distance, cte.dest_distance LIMIT $7) " +
