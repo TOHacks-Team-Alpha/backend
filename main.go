@@ -55,14 +55,14 @@ func main() {
 			client, err := app.Auth(ctx)
 			if err != nil {
 				log.Printf("error getting Auth client: %v\n", err)
-				c.JSON(401, err)
+				c.AbortWithError(401, err)
 				return
 			}
 
 			token, err := client.VerifyIDToken(ctx, idToken)
 			if err != nil {
 				log.Printf("error verifying ID token: %v\n", err)
-				c.JSON(401, err)
+				c.AbortWithError(401, err)
 				return
 			}
 
@@ -80,24 +80,25 @@ func main() {
 	})
 
 	r.GET("/auth", authMiddleware(), func(c *gin.Context) {
+		token, _ := c.Get("token")
 		c.JSON(200, gin.H{
-			"message": c.GetString("token"),
+			"message": token,
 		})
 	})
 
 	// r.POST("/endpoint", authMiddleware(), endpointDandler)
 
-	r.GET("/user", authMiddleware(), getUser) //[ ] DONE? [ ] TESTED IN POSTMAN?
-	r.PUT("/user", authMiddleware(), putUser) //[ ] DONE? [ ] TESTED IN POSTMAN?
+	r.GET("/user", authMiddleware(), getUser) //[X] DONE? [X] TESTED IN POSTMAN?
+	r.PUT("/user", authMiddleware(), putUser) //[X] DONE? [X] TESTED IN POSTMAN?
 
-	r.GET("/drive", authMiddleware(), getDrives)        //[ ] DONE? [ ] TESTED IN POSTMAN?
-	r.GET("/drive/:id", authMiddleware(), getDriveByID) //[ ] DONE? [ ] TESTED IN POSTMAN?
-	r.POST("/drive", authMiddleware(), postDrive)       //[ ] DONE? [ ] TESTED IN POSTMAN?
+	r.GET("/drive", authMiddleware(), getDrives)        //[X] DONE? [X] TESTED IN POSTMAN?
+	r.GET("/drive/:id", authMiddleware(), getDriveByID) //[X] DONE? [X] TESTED IN POSTMAN?
+	r.POST("/drive", authMiddleware(), postDrive)       //[X] DONE? [X] TESTED IN POSTMAN?
 
-	r.GET("/req", authMiddleware(), getDriveRequests)  //[ ] DONE? [ ] TESTED IN POSTMAN?
-	r.POST("/req", authMiddleware(), postDriveRequest) //[ ] DONE? [ ] TESTED IN POSTMAN?
-	r.PUT("/req", authMiddleware(), putDriveRequest)   //[ ] DONE? [ ] TESTED IN POSTMAN?
-	r.GET("/rides", authMiddleware(), getRideRequests) //[ ] DONE? [ ] TESTED IN POSTMAN?
+	r.GET("/req", authMiddleware(), getDriveRequests)  //[X] DONE? [X] TESTED IN POSTMAN?
+	r.POST("/req", authMiddleware(), postDriveRequest) //[X] DONE? [X] TESTED IN POSTMAN?
+	r.PUT("/req", authMiddleware(), putDriveRequest)   //[X] DONE? [ ] TESTED IN POSTMAN?
+	r.GET("/rides", authMiddleware(), getRideRequests) //[X] DONE? [X] TESTED IN POSTMAN?
 
 	r.Run(":8081") // listen and serve on 0.0.0.0:8081 (for windows "localhost:8081")
 }
