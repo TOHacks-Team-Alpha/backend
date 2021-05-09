@@ -55,14 +55,14 @@ func main() {
 			client, err := app.Auth(ctx)
 			if err != nil {
 				log.Printf("error getting Auth client: %v\n", err)
-				c.AbortWithError(401, err)
+				c.AbortWithStatusJSON(401, err)
 				return
 			}
 
 			token, err := client.VerifyIDToken(ctx, idToken)
 			if err != nil {
 				log.Printf("error verifying ID token: %v\n", err)
-				c.AbortWithError(401, err)
+				c.AbortWithStatusJSON(401, err)
 				return
 			}
 
@@ -97,8 +97,10 @@ func main() {
 
 	r.GET("/req", authMiddleware(), getDriveRequests)  //[X] DONE? [X] TESTED IN POSTMAN?
 	r.POST("/req", authMiddleware(), postDriveRequest) //[X] DONE? [X] TESTED IN POSTMAN?
-	r.PUT("/req", authMiddleware(), putDriveRequest)   //[X] DONE? [ ] TESTED IN POSTMAN?
+	r.PUT("/req", authMiddleware(), putDriveRequest)   //[X] DONE? [x] TESTED IN POSTMAN?
 	r.GET("/rides", authMiddleware(), getRideRequests) //[X] DONE? [X] TESTED IN POSTMAN?
+
+	r.POST("/purchase", authMiddleware(), useCoins) //[X] DONE? [X] TESTED IN POSTMAN?
 
 	r.Run(":8081") // listen and serve on 0.0.0.0:8081 (for windows "localhost:8081")
 }

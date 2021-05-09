@@ -2,24 +2,61 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
+	"math"
 
 	"github.com/gin-gonic/gin"
 )
 
-func getUser(c *gin.Context) {
+//helper
+func getUserDB(id string) (*User, error) {
 	repo := NewRepo(sqlConnString)
-	// defer repo.conn.Close(c.Request.Context())
-
-	user := &User{ID: c.GetString("uid")}
-
-	log.Printf("[getUser] | %v", user.ID)
-
+	defer repo.conn.Close(context.Background())
+	user := &User{ID: id}
 	err := repo.conn.QueryRow(context.Background(), selectUserByID, user.ID).Scan(&user.ID, &user.Name, &user.Coins, &user.NumTripsDriven, &user.NumTripsRidden, &user.TotalDistance)
 	if err != nil {
-		c.JSON(500, err)
+		return nil, err
+	}
+	return user, nil
+}
+
+//helper
+func checkAndSwapCoins(id string, spendAmount int) (*User, error) {
+	repo := NewRepo(sqlConnString)
+	defer repo.conn.Close(context.Background())
+	user := &User{ID: id}
+	err := repo.conn.QueryRow(context.Background(), selectUserByID, user.ID).Scan(&user.ID, &user.Name, &user.Coins, &user.NumTripsDriven, &user.NumTripsRidden, &user.TotalDistance)
+	if err != nil {
+		return nil, err
+	}
+
+	if spendAmount < 0 && float64(user.Coins) < math.Abs(float64(spendAmount)) {
+		return nil, errors.New("insufficent coins")
+	} else {
+		_, err = repo.conn.Exec(context.Background(), updateUserCoins2, user.ID, spendAmount) //TODO
+		if err != nil {
+			log.Printf("[SWAPPY] %v", err)
+			return nil, err
+		}
+	}
+	return user, nil
+}
+
+//routes
+
+func getUser(c *gin.Context) {
+	repo := NewRepo(sqlConnString)
+	defer repo.conn.Close(c.Request.Context())
+
+	log.Printf("[getUser] | %v", c.GetString("uid"))
+
+	user, err := getUserDB(c.GetString("uid"))
+	if err != nil {
+		c.AbortWithStatusJSON(500, err)
 		return
 	}
+
 	c.JSON(200, &user)
 }
 
@@ -30,7 +67,7 @@ func putUser(c *gin.Context) {
 	var user *User
 	err := c.Bind(&user)
 	if err != nil {
-		c.JSON(501, err)
+		c.AbortWithStatusJSON(501, err)
 		return
 	}
 
@@ -40,7 +77,7 @@ func putUser(c *gin.Context) {
 	_, err = repo.conn.Exec(context.Background(), updateUserbyID, &user.ID, &user.Name)
 	if err != nil {
 		log.Printf("[Error] [updateUser] | %v", err)
-		c.JSON(500, err)
+		c.AbortWithStatusJSON(500, err)
 		return
 	}
 
@@ -54,7 +91,7 @@ func getDriveByID(c *gin.Context) {
 	// user := &User{ID: c.GetString("uid")}
 	// id, err := strconv.Atoi(c.Param("id"))
 	// if err != nil {
-	// 	c.JSON(500, err)
+	// 	c.AbortWithStatusJSON(500, err)
 	// 	return
 	// }
 
@@ -65,7 +102,7 @@ func getDriveByID(c *gin.Context) {
 	err := repo.conn.QueryRow(context.Background(), selectDriveByID, c.Param("id")).Scan(&drive.DriveID, &drive.DriverID, &drive.Time, &drive.SpaceAvailable, &drive.StartAddress, &drive.DestAddress, &drive.StartLat, &drive.StartLng, &drive.DestLat, &drive.DestLng)
 	if err != nil {
 		log.Printf("[get drive by id] | %v", err)
-		c.JSON(500, err)
+		c.AbortWithStatusJSON(500, err)
 		return
 	}
 
@@ -80,7 +117,7 @@ func getDrives(c *gin.Context) {
 	rows, err := repo.conn.Query(context.Background(), selectDrives, startLat, startLng, startRadius, destLat, destLng, destRadius, 20, c.GetString("uid"))
 	if err != nil {
 		log.Printf("[GET DRIVES] %v", err)
-		c.JSON(500, err)
+		c.AbortWithStatusJSON(500, err)
 		return
 	}
 
@@ -117,7 +154,7 @@ func getDrives(c *gin.Context) {
 		)
 		if err != nil {
 			log.Printf("[GET DRIVES 2] %v", err)
-			c.JSON(501, err)
+			c.AbortWithStatusJSON(501, err)
 			return
 		}
 		driveList = append(driveList, drive)
@@ -133,7 +170,7 @@ func postDrive(c *gin.Context) {
 	err := c.Bind(&drive)
 	if err != nil {
 		log.Printf("[POST DRIVE] %v", err)
-		c.JSON(501, err)
+		c.AbortWithStatusJSON(501, err)
 		return
 	}
 
@@ -143,7 +180,7 @@ func postDrive(c *gin.Context) {
 
 	if err != nil {
 		log.Printf("[POST DRIVE] %v", err)
-		c.JSON(500, err)
+		c.AbortWithStatusJSON(500, err)
 		return
 	}
 
@@ -157,13 +194,14 @@ func getDriveRequests(c *gin.Context) {
 	rows, err := repo.conn.Query(context.Background(), getDriveReqsForDriver, c.GetString("uid"))
 	if err != nil {
 		log.Printf("[GET DRIVE REQUESTS] %v", err)
-		c.JSON(500, err)
+		c.AbortWithStatusJSON(500, err)
 		return
 	}
 
 	type DriveResponse struct {
 		Req   DriveRequest
 		Drive Drive
+		User  *User
 	}
 
 	driveRequestList := make([]*DriveResponse, 0)
@@ -186,10 +224,18 @@ func getDriveRequests(c *gin.Context) {
 		)
 		if err != nil {
 			log.Printf("[GET DRIVE REQUESTS 2] %v", err)
-			c.JSON(501, err)
+			c.AbortWithStatusJSON(501, err)
 			return
 		}
 		drive.Drive.DriveID = drive.Req.DriveID
+
+		drive.User, err = getUserDB(drive.Req.RiderID)
+		if err != nil {
+			log.Printf("[GET DRIVE REQUESTS 3] %v", err)
+			c.AbortWithStatusJSON(501, err)
+			return
+		}
+
 		driveRequestList = append(driveRequestList, drive)
 	}
 
@@ -201,14 +247,15 @@ func getRideRequests(c *gin.Context) {
 	defer repo.conn.Close(context.Background())
 	rows, err := repo.conn.Query(context.Background(), getDriveReqsForRider, c.GetString("uid"))
 	if err != nil {
-		log.Printf("[GET DRIVE REQUESTS] %v", err)
-		c.JSON(500, err)
+		log.Printf("[GET RIDE REQUESTS] %v", err)
+		c.AbortWithStatusJSON(500, err)
 		return
 	}
 
 	type DriveResponse struct {
 		Req   DriveRequest
 		Drive Drive
+		User  *User
 	}
 
 	driveRequestList := make([]*DriveResponse, 0)
@@ -230,11 +277,18 @@ func getRideRequests(c *gin.Context) {
 			&drive.Drive.DestLng,
 		)
 		if err != nil {
-			log.Printf("[GET DRIVE REQUESTS 2] %v", err)
-			c.JSON(501, err)
+			log.Printf("[GET RIDE REQUESTS 2] %v", err)
+			c.AbortWithStatusJSON(501, err)
 			return
 		}
 		drive.Drive.DriveID = drive.Req.DriveID
+		drive.User, err = getUserDB(drive.Drive.DriverID)
+		if err != nil {
+			log.Printf("[GET RIDE REQUESTS 3] %v", err)
+			c.AbortWithStatusJSON(501, err)
+			return
+		}
+
 		driveRequestList = append(driveRequestList, drive)
 	}
 
@@ -248,7 +302,7 @@ func postDriveRequest(c *gin.Context) {
 	err := c.Bind(&driveReq)
 	if err != nil {
 		log.Printf("[POST DRIVE REQ] %v", err)
-		c.JSON(501, err)
+		c.AbortWithStatusJSON(501, err)
 		return
 	}
 
@@ -258,7 +312,7 @@ func postDriveRequest(c *gin.Context) {
 
 	if err != nil {
 		log.Printf("[POST DRIVE REQ 2] %v", err)
-		c.JSON(500, err)
+		c.AbortWithStatusJSON(500, err)
 		return
 	}
 
@@ -272,7 +326,7 @@ func putDriveRequest(c *gin.Context) {
 	err := c.Bind(&driveReq)
 	if err != nil {
 		log.Printf("[PUT DRIVE REQ] %v", err)
-		c.JSON(501, err)
+		c.AbortWithStatusJSON(501, err)
 		return
 	}
 
@@ -280,7 +334,7 @@ func putDriveRequest(c *gin.Context) {
 	err = repo.conn.QueryRow(context.Background(), selectDriveByID, driveReq.DriveID).Scan(&drive.DriveID, &drive.DriverID, &drive.Time, &drive.SpaceAvailable, &drive.StartAddress, &drive.DestAddress, &drive.StartLat, &drive.StartLng, &drive.DestLat, &drive.DestLng)
 	if err != nil {
 		log.Printf("[PUT DRIVE REQ] %v", err)
-		c.JSON(500, err)
+		c.AbortWithStatusJSON(500, err)
 		return
 	}
 
@@ -291,7 +345,7 @@ func putDriveRequest(c *gin.Context) {
 		_, err = repo.conn.Exec(context.Background(), updateDriveReq, driveReq.Status, drive.DriveID, driveReq.RiderID) //TODO:
 		if err != nil {
 			log.Printf("[PUT DRIVE REQ - DRIVER] %v", err)
-			c.JSON(500, err)
+			c.AbortWithStatusJSON(500, err)
 			return
 		}
 
@@ -302,7 +356,7 @@ func putDriveRequest(c *gin.Context) {
 			_, err = repo.conn.Exec(context.Background(), updateDrive, -1, drive.DriveID) //TODO:
 			if err != nil {
 				log.Printf("[POST DRIVE REQ 2] %v", err)
-				c.JSON(500, err)
+				c.AbortWithStatusJSON(500, err)
 				return
 			}
 		case "rejected":
@@ -313,7 +367,7 @@ func putDriveRequest(c *gin.Context) {
 			_, err = repo.conn.Exec(context.Background(), deleteDrive, drive.DriveID) //TODO:
 			if err != nil {
 				log.Printf("[POST DRIVE REQ 2] %v", err)
-				c.JSON(500, err)
+				c.AbortWithStatusJSON(500, err)
 				return
 			}
 		case "complete":
@@ -322,14 +376,30 @@ func putDriveRequest(c *gin.Context) {
 			_, err = repo.conn.Exec(context.Background(), updateUserTripsRidden, 1, driveReq.RiderID)
 			if err != nil {
 				log.Printf("[POST DRIVE REQ 2] %v", err)
-				c.JSON(500, err)
+				c.AbortWithStatusJSON(500, err)
 				return
 			}
 			// add to drives driven
 			_, err = repo.conn.Exec(context.Background(), updateUserTripsDriven, 1, drive.DriverID)
 			if err != nil {
 				log.Printf("[POST DRIVE REQ 2] %v", err)
-				c.JSON(500, err)
+				c.AbortWithStatusJSON(500, err)
+				return
+			}
+			// TODO: update coins for both user and driver
+			//Take coins away from rider
+			_, errR := checkAndSwapCoins(driveReq.RiderID, -25)
+			if errR != nil {
+				c.AbortWithStatusJSON(500, err)
+				return
+			}
+			//Give coins to driver
+			_, errD := checkAndSwapCoins(drive.DriveID, 25)
+			if errD.Error() == "insufficent coins" {
+				c.JSON(403, gin.H{"error": "insufficent coins"})
+				return
+			} else if errD != nil {
+				c.AbortWithStatusJSON(500, err)
 				return
 			}
 			// TODO: update Total Distance
@@ -341,7 +411,7 @@ func putDriveRequest(c *gin.Context) {
 		_, err = repo.conn.Exec(context.Background(), updateDriveReq, driveReq.Status, drive.DriveID, driveReq.RiderID) //TODO:
 		if err != nil {
 			log.Printf("[PUT DRIVE REQ - RIDER] %v", err)
-			c.JSON(500, err)
+			c.AbortWithStatusJSON(500, err)
 			return
 		}
 		switch driveReq.Status {
@@ -351,7 +421,7 @@ func putDriveRequest(c *gin.Context) {
 			_, err = repo.conn.Exec(context.Background(), updateDrive, 1, drive.DriveID) //TODO:
 			if err != nil {
 				log.Printf("[PUT] DRIVE REQ 2] %v", err)
-				c.JSON(500, err)
+				c.AbortWithStatusJSON(500, err)
 				return
 			}
 		case "complete":
@@ -371,6 +441,53 @@ func putDriveRequest(c *gin.Context) {
 	c.JSON(200, driveReq)
 }
 
+func useCoins(c *gin.Context) {
+	repo := NewRepo(sqlConnString)
+	defer repo.conn.Close(context.Background())
+	var purchReq *PurchaseRequest
+	err := c.Bind(&purchReq)
+	if err != nil {
+		log.Printf("[POST USECOINS REQ] %v", err)
+		c.AbortWithStatusJSON(501, err)
+		return
+	}
+
+	log.Printf("[USE COINS] %v", purchReq)
+
+	item, ok := items[purchReq.Item]
+	if !ok {
+		log.Printf("[USE COINS - COULD NOT FIND ITEM] %v", err)
+		c.AbortWithStatusJSON(500, err)
+		return
+	}
+
+	_, err = checkAndSwapCoins(c.GetString("uid"), -item)
+	if err.Error() == "insufficent coins" {
+		c.JSON(403, gin.H{"error": "insufficent coins"})
+		return
+	} else if err != nil {
+		log.Printf("[POST USECOINS REQ 2] %v", err)
+		c.AbortWithStatusJSON(500, err)
+		return
+	}
+
+	user, err := getUserDB(c.GetString("uid"))
+	if err != nil {
+		c.AbortWithStatusJSON(500, err)
+		return
+	}
+	c.JSON(200, gin.H{"status": "purchase was successful!", "User": user})
+}
+
+var items = map[string]int{
+	"trees":   20,
+	"gas":     34,
+	"amazon":  500,
+	"charity": 15,
+	"donate":  5,
+	"swag":    20,
+}
+
 const (
 	selectAllUsers        = "select * from users;"
 	selectUserByID        = "SELECT * FROM users WHERE id = $1"
@@ -379,7 +496,8 @@ const (
 	updateUserTripsRidden = "UPDATE users SET num_trips_ridden  = num_trips_driven  + $1 WHERE id = $2;"
 	createDrive           = "INSERT INTO drives (driver_id, time, space_available, start_address, dest_address, start_lat, start_lng, dest_lat, dest_lng) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);"
 	createDriveRequest    = "INSERT INTO drive_reqs VALUES ($1, $2, $3) RETURNING status;"
-	updateUserCoins       = "UPDATE users AS u SET coins = u.coins + u2.coins FROM ( VALUES ($1, $2), ($3, $4)) AS u2(id, coins) WHERE u2.id=u.id;"
+	updateUserCoins       = "UPDATE users AS u SET coins = u.coins + u2.coins FROM (VALUES ($1, $2), ($3, $4)) AS u2(id, coins) WHERE u2.id=u.id;"
+	updateUserCoins2      = "UPDATE users SET coins = coins + $2 WHERE id = $1;"
 	getDriveReqs          = "SELECT * FROM drive_reqs where drive_id = $1;"
 	// getUserDriveReqs      = "SELECT * FROM drive_reqs where rider_id = $1;"
 	getDriveReqsForDriver = "SELECT drive_reqs.drive_id, driver_id, rider_id, status, time, space_available, start_address, dest_address, start_lat, start_lng, dest_lat, dest_lng FROM drive_reqs INNER JOIN drives ON drives.drive_id = drive_reqs.drive_id WHERE driver_id = $1;"

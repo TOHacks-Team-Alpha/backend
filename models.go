@@ -28,3 +28,7 @@ type DriveRequest struct {
 	RiderID string `json:"rider_id"`
 	Status  string `json:"status"`
 }
+
+type PurchaseRequest struct {
+	Item string `json:"item"`
+}

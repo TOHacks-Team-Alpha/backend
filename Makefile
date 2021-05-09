@@ -19,4 +19,6 @@ run:
 
 kill:
 	docker kill tohacks-backend
-	
+
+dev:
+	go build . && ./backend.exe
